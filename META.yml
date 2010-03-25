@@ -1,0 +1,30 @@
+---
+abstract: 'OCS Software deployment support for FusionInventory Agent'
+author: ~
+build_requires:
+  ExtUtils::MakeMaker: 6.42
+configure_requires:
+  ExtUtils::MakeMaker: 6.42
+distribution_type: module
+generated_by: 'Module::Install version 0.94'
+license: gpl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: FusionInventory-Agent-Task-OcsDeploy
+no_index:
+  directory:
+    - inc
+requires:
+  Archive::Extract: 0
+  Digest::MD5: 0
+  File::Copy: 0
+  File::Copy::Recursive: 0
+  File::Glob: 0
+  File::Path: 0
+  FusionInventory::Agent: 2.0
+  XML::Simple: 0
+  perl: 5.6.0
+resources:
+  license: http://opensource.org/licenses/gpl-license.php
+version: 1.0
