@@ -1,6 +1,6 @@
 package FusionInventory::Agent::Task::OcsDeploy;
 use threads;
-our $VERSION = '1.0.3';
+our $VERSION = '1.0.4';
 
 use strict;
 use warnings;
@@ -208,6 +208,18 @@ sub diskIsFull {
             if ($t && $t =~ /(\d+)\d{6}$/) {
                 $spaceFree = $1;
             }
+        }
+    } elsif ($^O =~ /^solaris/i) {
+        my $dfFh;
+        if (open($dfFh, '-|', "df", '-b', $self->{downloadBaseDir})) {
+            foreach(<$dfFh>) {
+                if (/^\S+\s+(\d+)/) {
+                    $spaceFree = int($1/1024);
+                }
+            }
+            close $dfFh
+        } else {
+            $logger->error("Failed to exec df");
         }
     } else {
         my $dfFh;
