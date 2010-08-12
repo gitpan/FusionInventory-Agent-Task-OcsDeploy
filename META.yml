@@ -25,6 +25,7 @@ requires:
   FusionInventory::Agent: 2.0
   XML::Simple: 0
   perl: 5.6.0
+  threads: 0
 resources:
   license: http://opensource.org/licenses/gpl-license.php
-version: 1.0.4
+version: 1.0.5
