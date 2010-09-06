@@ -1,6 +1,6 @@
 package FusionInventory::Agent::Task::OcsDeploy;
 use threads;
-our $VERSION = '1.0.6';
+our $VERSION = '1.0.7';
 
 use strict;
 use warnings;
@@ -442,7 +442,7 @@ sub processOrderCmd {
         }
 
     }
-    $self->setErrorCode('CODE_SUCCESS');
+    $self->setErrorCode('SUCCESS_OK');
     $self->reportError( $orderId, "order processed" );
 
     return 1;
@@ -896,7 +896,7 @@ sub findMirror {
     } elsif ( $^O =~ /^linux/x ) {
         foreach (`ifconfig`) {
             if
-            (/inet\saddr:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*Mask:255.255.255.0$/x) {
+            (/inet\saddr:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*Mask:255.255.\d+.\d+$/x) {
                 push @addresses, $1;
             }
 
@@ -905,7 +905,7 @@ sub findMirror {
     elsif ( $^O =~ /^MSWin/x ) {
         foreach (`route print -4`) {
             next unless
-            /^\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+255\.255\.255\.0/x;
+            /^\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+255\.255\.\d+\.\d+/x;
             if (/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+\d+$/x) {
                 push @addresses, $1;
             }
