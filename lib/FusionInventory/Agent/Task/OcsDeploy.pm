@@ -1,6 +1,6 @@
 package FusionInventory::Agent::Task::OcsDeploy;
 use threads;
-our $VERSION = '1.0.7';
+our $VERSION = '1.0.8';
 
 use strict;
 use warnings;
@@ -16,7 +16,7 @@ use Digest::MD5 qw(md5);
 use File::Copy::Recursive qw(dirmove);
 use Time::HiRes;
 
-use Cwd;
+use Cwd qw(getcwd realpath);
 
 use FusionInventory::Logger;
 use FusionInventory::Agent::Storage;
@@ -68,10 +68,11 @@ sub main {
         $logger->fault('No vardir in $target');
     }
 
-    $self->{downloadBaseDir} = $self->{'target'}->{'vardir'} . '/deploy';
-    $self->{runBaseDir}      = $self->{target}->{vardir} . '/run';
-    $self->{tmpBaseDir}      = $self->{target}->{vardir} . '/tmp';
+    my $vardir = realpath($self->{'target'}->{'vardir'});
 
+    $self->{downloadBaseDir} =  $vardir. '/deploy';
+    $self->{runBaseDir}      = $vardir . '/run';
+    $self->{tmpBaseDir}      = $vardir . '/tmp';
 
     foreach (qw/downloadBaseDir runBaseDir tmpBaseDir/) {
         if ( !-d $self->{$_} && !mkpath( $self->{$_} ) ) {
@@ -460,7 +461,7 @@ sub downloadAndConstruct {
     my $orderId = $params->{orderId};
     my $order   = $myData->{byId}->{$orderId};
 
-    my $downloadBaseDir = $target->{vardir} . '/deploy';
+    my $downloadBaseDir = $self->{downloadBaseDir};
     my $downloadDir     = $downloadBaseDir . '/' . $orderId;
     if ( !-d $downloadDir && !mkpath($downloadDir) ) {
         $logger->error("Failed to create $downloadDir");
@@ -522,7 +523,8 @@ sub downloadAndConstruct {
             # Can't find a mirror in my networks with the file, I grab it
             # directly from the main server
             $remoteFile = $baseUrl . '/' . $frag;
-            sleep($fragLatency);
+            #Already slow actually
+            #sleep($fragLatency);
         }
         my $localFile = $downloadDir . '/' . $frag;
 
@@ -731,8 +733,6 @@ sub readProlog {
         ];
     }
 
-    my $downloadBaseDir = $target->{vardir} . '/download';
-
     # The orders are send during the PROLOG. Since the prolog is
     # one of the arg of the check() function. We can process it.
     if (!$prologresp) {
@@ -903,7 +903,7 @@ sub findMirror {
         }
     }
     elsif ( $^O =~ /^MSWin/x ) {
-        foreach (`route print -4`) {
+        foreach (`route print`) {
             next unless
             /^\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+255\.255\.\d+\.\d+/x;
             if (/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+\d+$/x) {
@@ -914,6 +914,7 @@ sub findMirror {
 
     foreach my $ip (@addresses) {
         next if $ip =~ /^127/x; # Ignore 127.x.x.x addresses
+        next if $ip =~ /^169/x; # Ignore 169.x.x.x range too
         if ($ip =~ /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/x) {
 
             foreach (1..255) {
@@ -964,15 +965,16 @@ sub findMirror {
                         my $rc;
                         my $begin;
                         my $end;
+			$logger->debug("url: $url");
                         eval {
                             local $SIG{ALRM} = sub { die "alarm\n" };
-                            alarm 1;
+                            alarm 5;
                             $begin = Time::HiRes::time();
 
                             $rc = $network->getStore({
                                     source => $url,
                                     target => $tempFile,
-                                    timeout => 1
+                                    timeout => 3
                                 }) or croak;
 
                             alarm 0;
