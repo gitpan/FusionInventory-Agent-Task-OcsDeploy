@@ -11,8 +11,9 @@ license 'gpl';
 version_from 'lib/FusionInventory/Agent/Task/OcsDeploy.pm';
 
 perl_version '5.006';
-requires 'FusionInventory::Agent' => '2.0';
-requires 'threads' => undef;
+requires 'FusionInventory::Agent' => '2.1.5';
+requires 'POE' => undef;
+requires 'POE::Component::Client::HTTP' => undef;
 requires 'Digest::MD5' => undef;
 requires 'XML::Simple' => undef;
 requires 'File::Copy' => undef;

@@ -1,5 +1,17 @@
 Revision history for FusionInventory::Agent::Task::OcsDeploy 
 
+1.1.0
+       * Transition from threads to POE
+       * restore FRAG_LATENCY now we are fast enough
+       * Move the POE code in P2P.pm
+       * Compute the IP list with Net::IP
+       * Keep the protocl if found in INFO_LOC and PACK_LOC,
+         it's now easy to do full SSL
+       * Bump the FusionInventory::Agent prerequis to 2.1.5
+       * Ignore network range larger than 1200 IP
+       * add --rpc-port support
+       * no more ugly warning if df fails
+
 1.0.8  Thu, 09 Sep 2010 14:28:26 +0200
        * Fix the P2P on Windows XP, remove the -4 parameter from the route
          cmd call

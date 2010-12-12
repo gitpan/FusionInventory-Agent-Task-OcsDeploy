@@ -4,6 +4,9 @@ ABOUT
  With this module, the agent is also able to do peer to peer file
  exchange with the other FusionInventory Agent.
 
+SECURITY NOTE
+ You must use HTTPS communication between the agent and the server
+
 OCS Software Deployment internal:
 
      period()

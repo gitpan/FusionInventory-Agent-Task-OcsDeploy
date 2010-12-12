@@ -1,6 +1,10 @@
 package FusionInventory::Agent::Task::OcsDeploy;
-use threads;
-our $VERSION = '1.0.8';
+our $VERSION = '1.1.0';
+
+#     <PARAM ID="1284305152" CERT_PATH="INSTALL_PATH"
+#     PACK_LOC="nana.rulezlan.org/download"
+#     CERT_FILE="INSTALL_PATH/cacert.pem" TYPE="PACK"
+#     INFO_LOC="nana.rulezlan.org/download" />
 
 use strict;
 use warnings;
@@ -23,6 +27,8 @@ use FusionInventory::Agent::Storage;
 use FusionInventory::Agent::XML::Query::SimpleMessage;
 use FusionInventory::Agent::XML::Response::Prolog;
 use FusionInventory::Agent::Network;
+
+use HTTP::Request::Common qw(GET);
 
 sub main {
     my ( undef ) = @_;
@@ -80,10 +86,6 @@ sub main {
         }
     }
 
-    $self->{hosts} = {};
-    $self->{findMirrorThreads} = [];
-
-    
     # Just in case some errors had not been sent
     # previously
     $self->pushErrorStack();
@@ -141,12 +143,12 @@ sub main {
         foreach my $orderId ( keys %{ $myData->{byPriority}->[$priority] } ) {
             my $order = $myData->{byId}->{$orderId};
 
-            # We keep the fragment 30 days. This should be a parameter. 
+            # We keep the fragment 30 days. This should be a parameter.
             if ($order->{ANWSER_DATE} < time - 3600*24*30) {
 
                 $self->clean({
                         orderId      => $orderId,
-                        purge        => 1 
+                        purge        => 1
                     });
 
             }
@@ -236,8 +238,10 @@ sub diskIsFull {
         }
     }
 
-    $logger->fault('$spaceFree is undef!') unless defined ($spaceFree);
-
+    if(!$spaceFree) {
+	$logger->debug('$spaceFree is undef!');
+	$spaceFree=0;
+    }
 
     # 400MB Free, should be set by a config option
     return ($spaceFree < 400);
@@ -345,7 +349,7 @@ sub extractArchive {
             type    => $type->{$magicNumber}
 
         );
-    
+
         if ( !$archiveExtract->extract( to => "$runDir" ) ) {
             $self->reportError( $orderId,
                 "Failed to extract archive $downloadDir/final" );
@@ -476,15 +480,11 @@ sub downloadAndConstruct {
 
     my $fragLatency = $myData->{config}->{FRAG_LATENCY};
     $order->{ERROR_COUNT} = 0 unless exists( $order->{ERROR_COUNT} );
-    
-    if ($order->{PACK_LOC} =~ /nana\.rulezlan\.org/x) {
-        $order->{PROTO} = 'https';
-    }
-    my $baseUrl = ( $order->{PROTO} =~ /^HTTP$/ix ) ? "http://" : "";
-    if ($order->{PACK_LOC} =~ /nana\.rulezlan\.org/x) {
-        $baseUrl = 'https://';
-    }
 
+    my $baseUrl;
+    if ($order->{PACK_LOC} !~ /^http(|s)\:\/\//) {
+        $baseUrl = ( $order->{PROTO} =~ /^HTTP$/ix ) ? "http://" : "";
+    }
     $baseUrl .= $order->{PACK_LOC};
     $baseUrl .= '/' if $order->{PACK_LOC} !~ /\/$/x;
     $baseUrl .= $orderId;
@@ -510,36 +510,61 @@ sub downloadAndConstruct {
               . "fragments in a random order and wait `$fragLatency'"
               . " second(s) between each of them" );
     }
+
+    my $lastScan = 0;
+    my $mirrorIp;
     while ( grep ( /1/, @downloadToDo ) ) {
 
-        my $fragID = int( rand(@downloadToDo) ) + 1;    # pick a random frag
-        next unless $downloadToDo[ $fragID - 1 ] == 1;  # Already done?
+        my $fragId = int( rand(@downloadToDo) ) + 1;    # pick a random frag
+        next unless $downloadToDo[ $fragId - 1 ] == 1;  # Already done?
 
-        my $frag = $orderId . '-' . $fragID;
+        my $frag = $orderId . '-' . $fragId;
 
-        my $remoteFile = $self->findMirror( $orderId, $fragID );
-        if ( !$remoteFile ) {
-
-            # Can't find a mirror in my networks with the file, I grab it
-            # directly from the main server
-            $remoteFile = $baseUrl . '/' . $frag;
-            #Already slow actually
-            #sleep($fragLatency);
-        }
+        my $remoteFile;
         my $localFile = $downloadDir . '/' . $frag;
 
-        my $rc = $network->getStore({
+        my $rc;
+        # Reuse the last mirror found
+        if ($mirrorIp) {
+            $remoteFile = "http://$mirrorIp:".
+            ($config->{'rpc-port'} || 62354).
+            "/deploy/$orderId/$orderId-$fragId";
+            $rc = $network->getStore({
                 source => $remoteFile,
                 target => $localFile . '.part'
-                
             });
-        
-        if ( $network->isSuccess({code => $rc}) && move( $localFile . '.part', $localFile ) ) {
+        }
+
+        # Or get a mirror and use it
+        if ((!$rc || !$network->isSuccess({ code => $rc })) && $lastScan < time - 180) {
+            $mirrorIp = $self->findMirror( $orderId, $fragId ) unless $mirrorIp;
+            if ($mirrorIp) {
+                $remoteFile = "http://$mirrorIp:".
+                ($config->{'rpc-port'} || 62354).
+                "/deploy/$orderId/$orderId-$fragId";
+                $rc = $network->getStore({
+                        source => $remoteFile,
+                        target => $localFile . '.part'
+                    });
+            }
+            $lastScan = time;
+        }
+
+        # Or use the upstream server
+        if (!$rc || !$network->isSuccess({ code => $rc })) {
+            $remoteFile = $baseUrl . '/' . $frag;
+            $rc = $network->getStore({
+                source => $remoteFile,
+                target => $localFile . '.part'
+            });
+            sleep($fragLatency);
+        }
+        if ($rc && $network->isSuccess({code => $rc}) && move( $localFile . '.part', $localFile ) ) {
 
             # TODO to a md5sum/sha256 check here
             $order->{ERROR_COUNT} = 0;
             $logger->debug( $remoteFile . ' -> ' . $localFile . ': success' );
-            $downloadToDo[ $fragID - 1 ] = 0;
+            $downloadToDo[ $fragId - 1 ] = 0;
 
         }
         else {
@@ -550,7 +575,6 @@ sub downloadAndConstruct {
             $order->{ERROR_COUNT}++;
 
         }
-
         if ( $order->{ERROR_COUNT} > 30 ) {
             $self->reportError( $orderId, "Max download error reached" );
             return;
@@ -560,7 +584,7 @@ sub downloadAndConstruct {
     ### Recreate the archive
     $self->setErrorCode('ERR_BUILD');
     $logger->info("Construct the archive in $downloadDir/final");
-    
+
     my $finaleFileFd;
     if ( !open $finaleFileFd, ">$downloadDir/final" ) {
         $logger->error("Failed to open $downloadDir/final");
@@ -568,8 +592,8 @@ sub downloadAndConstruct {
     }
     binmode($finaleFileFd);    # ...
 
-    foreach my $fragID ( 1 .. $order->{FRAGS} ) {
-        my $frag = $orderId . '-' . $fragID;
+    foreach my $fragId ( 1 .. $order->{FRAGS} ) {
+        my $frag = $orderId . '-' . $fragId;
 
         my $localFile = $downloadDir . '/' . $frag;
         my $fragFd;
@@ -783,8 +807,13 @@ sub readProlog {
 
             my $protocl="https";
 
-            my $infoURI =
-              $protocl.'://' . $paramHash->{INFO_LOC} . '/' . $orderId . '/info';
+            my $infoURI;
+
+            if ($paramHash->{INFO_LOC} =~ /^http(|s)\:\/\//) {
+                $infoURI = $paramHash->{INFO_LOC} . '/' . $orderId . '/info';
+            } else {
+                $infoURI = $protocl.'://' . $paramHash->{INFO_LOC} . '/' . $orderId . '/info';
+            }
             my $content = $network->get({
                     source => $infoURI,
                     timeout => 30
@@ -834,197 +863,22 @@ sub readProlog {
     return 1;
 }
 
-sub _joinFindMirrorThread {
-    my ($self) = @_;
-
-    my $lastValdidIp;
-    my $url;
-
-    my $logger = $self->{logger};
-
-    foreach ( @{$self->{findMirrorThreads}} ) {
-          my @ret = $self->_processFindMirrorResult($_->join());
-          ($lastValdidIp, $url) = @ret if @ret;
-    }
-    $self->{findMirrorThreads} = [];
-
-    if ($lastValdidIp) {
-        return ($lastValdidIp, $url);
-    } else {
-        return ();
-    }
-}
-
-sub _processFindMirrorResult {
-    my ($self, $ip, $rc, $speed, $url) = @_;
-
-    my $logger = $self->{logger};
-
-    return unless $rc;
-
-    if ($ip =~ /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/x) {
-        if ($rc==200 || $rc==404) {
-            $self->{hosts}{$1}{$2}{$3}{$4}{isUp}=1;
-            $self->{hosts}{$1}{$2}{$3}{$4}{speed}=$speed;
-        } else {
-            $self->{hosts}{$1}{$2}{$3}{$4}{isUp}=0;
-            $self->{hosts}{$1}{$2}{$3}{$4}{speed}=undef;
-            $self->{hosts}{$1}{$2}{$3}{$4}{lastCheck}=time;
-        }
-        if ($rc==200) {
-            return  ($ip, $url);
-        }
-    } else {
-        print "parse error `$ip'\n";
-    }
-
-    return ();
-
-}
-
 sub findMirror {
     my ( $self, $orderId, $fragId ) = @_;
-
+ 
     my $config = $self->{config};
     my $logger = $self->{logger};
-    my $network = $self->{network};
 
-    my @addresses;
-
-    if ($config->{rpcIp}) {
-        push @addresses, $config->{rpcIp};
-    } elsif ( $^O =~ /^linux/x ) {
-        foreach (`ifconfig`) {
-            if
-            (/inet\saddr:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*Mask:255.255.\d+.\d+$/x) {
-                push @addresses, $1;
-            }
-
-        }
-    }
-    elsif ( $^O =~ /^MSWin/x ) {
-        foreach (`route print`) {
-            next unless
-            /^\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+255\.255\.\d+\.\d+/x;
-            if (/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+\d+$/x) {
-                push @addresses, $1;
-            }
-        }
+    return if $config->{'no-p2p'};
+    
+    if (!eval "use FusionInventory::Agent::Task::OcsDeploy::P2P; 1;") {
+        $logger->debug("Fails to use P2P: ".$@);
+        return;
     }
 
-    foreach my $ip (@addresses) {
-        next if $ip =~ /^127/x; # Ignore 127.x.x.x addresses
-        next if $ip =~ /^169/x; # Ignore 169.x.x.x range too
-        if ($ip =~ /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/x) {
-
-            foreach (1..255) {
-                next if $4==$_; # Ignore myself :) 
-                next if exists ($self->{hosts}{$1}{$2}{$3}{$_});
-                $self->{hosts}{$1}{$2}{$3}{$_}{lastCheck}=0;
-                $self->{hosts}{$1}{$2}{$3}{$_}{isUp}=undef;
-                $self->{hosts}{$1}{$2}{$3}{$_}{speed}=undef;
-            }
-        } else {
-            $logger->fault("Invalid IP `$ip'");
-        }
-    }
-
-    my $url;
-    my $lastValdidIp;
-
-    if (!$self->{firstScanWarning}) {
-        $logger->debug("Looking for peers with the file in my network. ".
-            "This may be long the first time.");
-        $self->{firstScanWarning} = 1;
-    }
-    $logger->debug("Looking for $orderId-$fragId");
-    NETSCAN: foreach my $a (keys %{$self->{hosts}}) {
-        foreach my $b (keys %{$self->{hosts}{$a}}) {
-            foreach my $c (keys %{$self->{hosts}{$a}{$b}}) {
-                foreach my $d (keys %{$self->{hosts}{$a}{$b}{$c}}) {
-                    # If the host had been detected as down during the last
-                    # 10 minutes, I ignore it
-                    if ($self->{hosts}{$a}{$b}{$c}{$d}{lastCheck}>(time -
-                            600)) {
-                        if (!$self->{hosts}{$a}{$b}{$c}{$d}{isUp}) {
-                            next;
-                        }
-                    }
-
-
-                    my $func = sub {
-
-                        my $ip = "$a.$b.$c.$d";
-                        my $speed=0;
-                        my $url =
-                        "http://$ip:62354/deploy/$orderId/$orderId-$fragId";
-
-                        my $rand     = int rand(0xffffffff);
-                        my $tempFile = $self->{tmpBaseDir}."/tmp." . $rand;
-
-                        my $rc;
-                        my $begin;
-                        my $end;
-			$logger->debug("url: $url");
-                        eval {
-                            local $SIG{ALRM} = sub { die "alarm\n" };
-                            alarm 5;
-                            $begin = Time::HiRes::time();
-
-                            $rc = $network->getStore({
-                                    source => $url,
-                                    target => $tempFile,
-                                    timeout => 3
-                                }) or croak;
-
-                            alarm 0;
-                        };
-                        $end = Time::HiRes::time();
-
-                        my $size = (stat($tempFile))[7];
-                        if ($size) {
-                            $speed = int($size / ($end - $begin) / 1024);
-                        }
-                        unlink $tempFile;
-                        return ($ip, $rc, $speed, $url);
-                    };
-
-
-                    # https://rt.cpan.org/Public/Bug/Display.html?id=41007
-                    # http://www.perlmonks.org/index.pl?node_id=407374
-                    if ( 0 ) {
-
-                        if ( @{$self->{findMirrorThreads}} > 1 ) {
-                            ($lastValdidIp, $url) = $self->_joinFindMirrorThread();
-                            last NETSCAN if $lastValdidIp;
-                        }
-
-
-                        my $thr = threads->create(
-                            { 'context'    => 'list' },
-                            $func
-                        );
-                        if ($thr) {
-                            push @{$self->{findMirrorThreads}}, $thr;
-                        }
-                    } else {
-                        ($lastValdidIp, $url) = $self->_processFindMirrorResult(&$func());
-                        last NETSCAN if $lastValdidIp;
-                    }
-                }
-            }
-        }
-    }
-    my @ret = $self->_joinFindMirrorThread();
-    ($lastValdidIp, $url) = @ret if @ret;
-
-    if ($url) {
-        $logger->debug("Mirror found on host $lastValdidIp");
-    } else {
-        $logger->debug("No mirror found");
-    }
-    return $url;
+    return FusionInventory::Agent::Task::OcsDeploy::P2P::findMirrorWithPOE(@_);
 }
+
 
 1;
 

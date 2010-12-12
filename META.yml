@@ -22,10 +22,11 @@ requires:
   File::Copy::Recursive: 0
   File::Glob: 0
   File::Path: 0
-  FusionInventory::Agent: 2.0
+  FusionInventory::Agent: 2.1.5
+  POE: 0
+  POE::Component::Client::HTTP: 0
   XML::Simple: 0
   perl: 5.6.0
-  threads: 0
 resources:
   license: http://opensource.org/licenses/gpl-license.php
-version: 1.0.8
+version: 1.1.0
