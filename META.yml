@@ -15,6 +15,10 @@ no_index:
   directory:
     - inc
     - t
+recommends:
+  POE: 0
+  POE::Component::Client::HTTP: 0
+  POE::Component::Client::Ping: 0
 requires:
   Archive::Extract: 0
   Digest::MD5: 0
@@ -22,11 +26,9 @@ requires:
   File::Copy::Recursive: 0
   File::Glob: 0
   File::Path: 0
-  FusionInventory::Agent: 2.1.5
-  POE: 0
-  POE::Component::Client::HTTP: 0
+  FusionInventory::Agent: 2.1.8
   XML::Simple: 0
   perl: 5.6.0
 resources:
   license: http://opensource.org/licenses/gpl-license.php
-version: 1.1.0
+version: 1.1.1

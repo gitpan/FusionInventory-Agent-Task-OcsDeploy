@@ -1,5 +1,5 @@
 package FusionInventory::Agent::Task::OcsDeploy;
-our $VERSION = '1.1.0';
+our $VERSION = '1.1.1';
 
 #     <PARAM ID="1284305152" CERT_PATH="INSTALL_PATH"
 #     PACK_LOC="nana.rulezlan.org/download"
@@ -94,7 +94,7 @@ sub main {
 
     # Try to imitate as much as I can the Windows agent
     #    foreach (0..$myData->{config}->{PERIOD_LENGTH}) {
-    foreach my $priority ( 1 .. 10 ) {
+    foreach my $priority ( 0 .. 10 ) {
         foreach my $orderId ( keys %{ $myData->{byPriority}->[$priority] } ) {
             my $order = $myData->{byId}->{$orderId};
 
@@ -226,10 +226,10 @@ sub diskIsFull {
         }
     } else {
         my $dfFh;
-        if (open($dfFh, '-|', "df", '-Pm', $self->{downloadBaseDir})) {
+        if (open($dfFh, '-|', "df", '-Pk', $self->{downloadBaseDir})) {
             foreach(<$dfFh>) {
                 if (/^\S+\s+\S+\s+(\d+)/) {
-                    $spaceFree = $1;
+                    $spaceFree = $1 / 1024;
                 }
             }
             close $dfFh
@@ -537,7 +537,12 @@ sub downloadAndConstruct {
 
         # Or get a mirror and use it
         if ((!$rc || !$network->isSuccess({ code => $rc })) && $lastScan < time - 180) {
-            $mirrorIp = $self->findMirror( $orderId, $fragId ) unless $mirrorIp;
+            $mirrorIp = findMirror({
+            port => $config->{'rpc-port'} || 62354,
+            orderId => $orderId,
+            fragId => $fragId,
+            logger => $logger,
+            }) unless $mirrorIp;
             if ($mirrorIp) {
                 $remoteFile = "http://$mirrorIp:".
                 ($config->{'rpc-port'} || 62354).
@@ -896,5 +901,7 @@ request from an OCS Inventory server.
 
 OCS Inventory uses SSL certificat to authentificat the server. You may have
 to point F<--ca-cert-file> or F<--ca-cert-dir> to your public certificat.
+
+If the P2P option is turned on, the agent will looks for peer in its network. The network size will be limited at 255 machines.
 
 =cut

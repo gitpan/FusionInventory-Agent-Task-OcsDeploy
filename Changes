@@ -1,6 +1,15 @@
 Revision history for FusionInventory::Agent::Task::OcsDeploy 
 
-1.1.0
+1.1.1  Sat, 05 Mar 2011 15:46:18 +0100
+       * Use POE::Component::Client::Ping to know if a host
+         is up
+       * P2P dependencies are only suggested now
+       * process priority 0 deployment too, thanks Diegos
+       * P2P Limit the size of the network to 255 machines
+       * df command of HP-UX does not support -m option, use -k
+         instead (Amir Pakdel)
+
+1.1.0  Sun, 12 Dec 2010 21:03:00 +0200
        * Transition from threads to POE
        * restore FRAG_LATENCY now we are fast enough
        * Move the POE code in P2P.pm
